@@ -21,6 +21,13 @@ From the UI persepctive, we will use Streamlit:
 - Display data tables and visualizations (still to be define if inline in the chat or separate area).
 - Allow user to clear chat history.
 
+## Current Implementation
+- **Centralized OpenAI Client Directory**: A centralized directory (`llm_clients`) is used to load and configure the OpenAI client. This includes loading credentials from environment variables or a `secrets/openAI.toml` file.
+- **Streamlit Chatbot Interface**: A simple chatbot interface is implemented using Streamlit. It supports:
+  - Chat history rendering.
+  - User input handling.
+  - Streaming or non-streaming responses based on user preference.
+
 ## Possible ideas to expore to implement
 
 #### Agent Additions

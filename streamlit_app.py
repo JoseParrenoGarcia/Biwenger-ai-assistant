@@ -51,9 +51,9 @@ if prompt := st.chat_input("Type your message"):
         with st.spinner("Thinking..."):
             if STREAMING:
                 reply_text = st.write_stream(backend.stream(st.session_state.messages))
-#             else:
-#                 reply_text = backend.chat(st.session_state.messages)
-#                 st.markdown(reply_text)
-#
-#     # 4️⃣ Append assistant message
-#     st.session_state.messages.append({"role": "assistant", "content": reply_text})
+            else:
+                reply_text = backend.chat(st.session_state.messages)
+                st.markdown(reply_text)
+
+    # 4️⃣ Append assistant message
+    st.session_state.messages.append({"role": "assistant", "content": reply_text})
