@@ -4,6 +4,7 @@ import os
 import tomllib
 from pathlib import Path
 from openai import OpenAI
+import streamlit as st
 
 # ---------- 1) Configuration loader ----------
 def _load_openai_config() -> dict:
@@ -35,6 +36,7 @@ def _load_openai_config() -> dict:
 
 
 # ---------- 2) Client factory ----------
+@st.cache_resource
 def get_openai_client() -> OpenAI:
     """Return an authenticated OpenAI client instance."""
     cfg = _load_openai_config()
@@ -42,11 +44,7 @@ def get_openai_client() -> OpenAI:
 
 
 # ---------- 3) Helper for default model ----------
+@st.cache_resource
 def get_default_model() -> str:
     """Return the default model name from secrets or env."""
     return _load_openai_config()["model"]
-
-if __name__ == "__main__":
-    cfg = _load_openai_config()
-    print("✅ OpenAI config loaded.")
-    print(cfg['model'])
