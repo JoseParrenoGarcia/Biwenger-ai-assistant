@@ -1,5 +1,8 @@
 import streamlit as st
 from llm_clients.openai_backend import OpenAIChatBackend
+from llm_clients.roles_and_prompts import (
+    SENIOR_ANALYST_ROLE
+)
 
 st.set_page_config(page_title="AI Senior Data Analyst", page_icon="💬", layout="centered")
 
@@ -25,7 +28,7 @@ with st.sidebar:
     STREAMING = st.toggle("Stream responses", value=True)
     if st.button("Clear chat"):
         st.session_state.messages = [
-            {"role": "system", "content": "You are a helpful Senior Data Analyst."},
+            {"role": "system", "content": SENIOR_ANALYST_ROLE},
             {"role": "assistant", "content": "Hi 👋 I am your AI Senior Data Analyst. How can I help today?"},
         ]
         st.rerun()

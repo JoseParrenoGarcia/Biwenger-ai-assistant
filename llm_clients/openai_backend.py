@@ -2,14 +2,18 @@
 from __future__ import annotations
 from typing import Protocol, Iterable, List, TypedDict, Optional
 from openai import OpenAI
-import os
 import tomllib
 from pathlib import Path
+
+from tools.specs import TOOLS_SPECS
+from tools.registry import TOOL_REGISTRY
 
 # ---------- Types / Interface ----------
 class Message(TypedDict):
     role: str
     content: str
+    name: Optional[str]  # for tool role messages
+    tool_call_id: Optional[str]
 
 # ---------- Config helpers ----------
 def _load_openai_config() -> dict:
@@ -59,6 +63,8 @@ class OpenAIChatBackend:
             model=self.model,
             messages=messages,
             timeout=self.timeout,
+            tools=TOOLS_SPECS,   # 👈 give the model visibility of tools
+            tool_choice="none",  # 👈 do NOT allow execution
         )
         return resp.choices[0].message.content.strip()
 
@@ -68,6 +74,8 @@ class OpenAIChatBackend:
             messages=messages,
             stream=True,
             timeout=self.timeout,
+            tools=TOOLS_SPECS,   # 👈 give the model visibility of tools
+            tool_choice="none",  # 👈 do NOT allow execution
         )
         for chunk in stream:
             delta = chunk.choices[0].delta
