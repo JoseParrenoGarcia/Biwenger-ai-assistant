@@ -1,12 +1,12 @@
 # app/llm/openai_backend.py
 from __future__ import annotations
-from typing import TypedDict, Optional, Dict, Any
+from typing import TypedDict, Optional, Dict, Any, Tuple
 from openai import OpenAI
 import tomllib
 import json
 from pathlib import Path
 
-from tools.registry import MAKE_PLAN_SPEC, TOOLS_SPECS
+from tools.registry import MAKE_PLAN_SPEC, TOOLS_SPECS, TOOL_REGISTRY
 
 # ---------- Types / Interface ----------
 class Message(TypedDict):
@@ -50,6 +50,13 @@ def _tools_specs_to_text(specs) -> str:
         desc = (fn.get("description") or "").strip()
         lines.append(f"{name}:\n{desc}")
     return "\n\n".join(lines)
+
+def _is_dataframe(x) -> bool:
+    try:
+        import pandas as pd
+        return isinstance(x, pd.DataFrame)
+    except Exception:
+        return False
 
 # ---------- Backend ----------
 class OpenAIChatBackend:
@@ -240,4 +247,88 @@ class OpenAIChatBackend:
             {"role": "user", "content": user_text},
         ]
         return self.chat(messages)
+
+    # -------------------------
+    # EXECUTOR
+    # -------------------------
+
+    _TOOL_ADAPTERS = {}  # e.g., {"some_tool": custom_handler_func}
+
+    def _handle_result(self, tool: str, out: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Normalize any tool result into (observation, artifacts).
+        observation: small JSON for the chat/trace
+        artifacts: richer payload for the UI (tables, lists, values)
+        """
+        # Tool-specific adapter takes precedence
+        if tool in self._TOOL_ADAPTERS:
+            return self._TOOL_ADAPTERS[tool](out)
+
+        # Generic handlers
+        if _is_dataframe(out):
+            obs = {
+                "tool": tool,
+                "status": "ok",
+                "type": "dataframe",
+                "shape": [int(out.shape[0]), int(out.shape[1])],
+                "columns_count": int(len(out.columns)),
+            }
+            artifacts = {
+                "columns": list(out.columns),
+                "df_head": out.head(50),  # small sample for display
+            }
+            return obs, artifacts
+
+        if isinstance(out, (dict, list)):
+            size = len(out) if hasattr(out, "__len__") else None
+            obs = {"tool": tool, "status": "ok", "type": "json", "size": size}
+            artifacts = {"value": out}
+            return obs, artifacts
+
+        if isinstance(out, (str, bytes)):
+            obs = {"tool": tool, "status": "ok", "type": "text", "length": len(out)}
+            artifacts = {"value": out[:2000]}  # cap
+            return obs, artifacts
+
+        if isinstance(out, (int, float, bool)) or out is None:
+            obs = {"tool": tool, "status": "ok", "type": "scalar"}
+            artifacts = {"value": out}
+            return obs, artifacts
+
+        # Fallback
+        obs = {"tool": tool, "status": "ok", "type": "unknown"}
+        artifacts = {"repr": repr(out)}
+        return obs, artifacts
+
+    def execute_plan_locally(self, plan: dict) -> dict:
+        """
+        Deterministically execute a PLAN (no LLM). Generic across tools.
+        Returns: {"observations": [...], "artifacts": {"step_0": {...}, ...}}
+        """
+        if not isinstance(plan, dict) or "steps" not in plan or not plan["steps"]:
+            raise ValueError("Invalid PLAN: missing non-empty 'steps'.")
+
+        observations, artifacts_by_step = [], {}
+        for i, step in enumerate(plan["steps"]):
+            tool = step.get("tool")
+            args = step.get("args", {}) or {}
+
+            if tool not in TOOL_REGISTRY:
+                observations.append({
+                    "tool": tool, "status": "skipped", "reason": "Unknown tool"
+                })
+                continue
+
+            fn = TOOL_REGISTRY[tool]
+            try:
+                out = fn(**args)
+                obs, arts = self._handle_result(tool, out)
+                observations.append(obs)
+                artifacts_by_step[f"step_{i}"] = arts
+            except Exception as e:
+                observations.append({
+                    "tool": tool, "status": "error", "error": str(e)
+                })
+
+        return {"observations": observations, "artifacts": artifacts_by_step}
 
