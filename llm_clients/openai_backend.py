@@ -1,12 +1,12 @@
 # app/llm/openai_backend.py
 from __future__ import annotations
-from typing import Protocol, Iterable, List, TypedDict, Optional
+from typing import TypedDict, Optional, Dict, Any
 from openai import OpenAI
 import tomllib
+import json
 from pathlib import Path
 
-from tools.specs import TOOLS_SPECS
-from tools.registry import TOOL_REGISTRY
+from tools.registry import MAKE_PLAN_SPEC, TOOLS_SPECS
 
 # ---------- Types / Interface ----------
 class Message(TypedDict):
@@ -45,39 +45,100 @@ def _load_openai_config() -> dict:
 
 # ---------- Backend ----------
 class OpenAIChatBackend:
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
-        *,
-        timeout: Optional[float] = None,
-    ):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         cfg = _load_openai_config()
         self.api_key = api_key or cfg["api_key"]
         self.model = model or cfg["model"]
         self.client = OpenAI(api_key=self.api_key)
-        self.timeout = timeout
 
-    def chat(self, messages: List[Message]) -> str:
+    # -------------------------
+    # PLANNING PHASE
+    # -------------------------
+    def stream_planner(
+            self,
+            user_text: str,
+            context: Optional[str] = None,
+            stream: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Deterministic planning pass:
+        - Exposes only the 'make_plan' tool.
+        - Forces the LLM to return a PLAN JSON (no data execution).
+        """
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a planning agent. Your job is to output a minimal JSON PLAN "
+                    "that outlines the sequence of tool calls needed to satisfy the user's request. "
+                    "Do NOT execute anything. Use the 'make_plan' function only."
+                ),
+            },
+            {"role": "user", "content": user_text},
+        ]
+        if context:
+            messages.append({"role": "system", "content": f"CONTEXT_SCHEMA:\n{context}"})
+
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            timeout=self.timeout,
-            tools=TOOLS_SPECS,   # 👈 give the model visibility of tools
-            tool_choice="none",  # 👈 do NOT allow execution
+            tools=[MAKE_PLAN_SPEC],
+            tool_choice={"type": "function", "function": {"name": "make_plan"}},
+            stream=stream,
         )
-        return resp.choices[0].message.content.strip()
 
-    def stream(self, messages: List[Message]) -> Iterable[str]:
-        stream = self.client.chat.completions.create(
+        # For streaming UIs, return the raw iterator; otherwise parse
+        if stream:
+            return resp  # Streamlit can iterate over tokens
+        msg = resp.choices[0].message
+        if msg.tool_calls:
+            args = json.loads(msg.tool_calls[0].function.arguments)
+            return args
+        return json.loads(msg.content)
+
+    # -------------------------
+    # EXECUTION PHASE
+    # -------------------------
+    def stream_executor(
+            self,
+            user_text: str,
+            plan: Optional[Dict[str, Any]] = None,
+            stream: bool = True,
+            tool_choice: str = "auto",
+    ):
+        """
+        Execution pass:
+        - Exposes the real data tools from TOOLS_SPECS.
+        - Either lets the LLM choose tools (tool_choice='auto')
+          or enforces one per plan step deterministically.
+        """
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are now in execution mode. You can call the available data tools "
+                    "to carry out the approved PLAN. Follow the ReAct pattern: "
+                    "Thought → Action → Observation → Response. Keep outputs short."
+                ),
+            },
+            {"role": "user", "content": user_text},
+        ]
+
+        # Optionally inject the plan as prior context
+        if plan:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"APPROVED_PLAN:\n{json.dumps(plan, indent=2)}",
+                }
+            )
+
+        resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            stream=True,
-            timeout=self.timeout,
-            tools=TOOLS_SPECS,   # 👈 give the model visibility of tools
-            tool_choice="none",  # 👈 do NOT allow execution
+            tools=TOOLS_SPECS,
+            tool_choice=tool_choice,
+            stream=stream,
         )
-        for chunk in stream:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield delta.content
+
+        return resp

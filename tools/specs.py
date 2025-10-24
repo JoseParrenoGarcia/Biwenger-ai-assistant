@@ -5,6 +5,72 @@ Each entry describes a callable tool the model can invoke via the function-calli
 No implementation logic here — only metadata.
 """
 # ----------------------------------------------------
+# ------------------------------------------------------------
+# PLANNER TOOL SPEC — make_plan
+# ------------------------------------------------------------
+MAKE_PLAN_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "make_plan",
+        "description": (
+            "Plan the MINIMAL sequence of steps to satisfy the user's request using available tools.\n"
+            "Allowed step:\n"
+            "  - 'load_biwenger_player_stats' (load season snapshot as a DataFrame)\n"
+            "Guidance:\n"
+            "  • Prefer the shortest path (usually just load_biwenger_player_stats).\n"
+            "  • Do NOT invent filters, transformations, or plotting steps.\n"
+            "  • Use the provided schema context; only use listed columns.\n"
+            "  • If the request implies filtering or sorting, acknowledge it but do not include it as an executable step.\n"
+            "Return shape:\n"
+            "  • PLAN object with keys: steps, why, assumptions.\n"
+            "  • Each step must have keys: tool, args.\n"
+            "  • Always include a concise 'why' (≤120 chars) and up to 3 short 'assumptions'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {
+                                "type": "string",
+                                "enum": ["load_biwenger_player_stats"]
+                            },
+                            "args": {
+                                "type": "object",
+                                "description": (
+                                    "Arguments for the step.\n"
+                                    "- For 'load_biwenger_player_stats', use an empty object {}."
+                                ),
+                                "properties": {},
+                                "additionalProperties": False
+                            }
+                        },
+                        "required": ["tool", "args"],
+                        "additionalProperties": False
+                    }
+                },
+                "why": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "One-sentence rationale."
+                },
+                "assumptions": {
+                    "type": "array",
+                    "items": {"type": "string", "maxLength": 120},
+                    "maxItems": 3
+                }
+            },
+            "required": ["steps", "why", "assumptions"],
+            "additionalProperties": False
+        }
+    }
+}
+
+
 LOAD_BIWENGER_PLAYER_STATS_SPEC = {
     "type": "function",
     "function": {
@@ -23,7 +89,3 @@ LOAD_BIWENGER_PLAYER_STATS_SPEC = {
         }
     }
 }
-
-TOOLS_SPECS = [
-    LOAD_BIWENGER_PLAYER_STATS_SPEC,
-]
