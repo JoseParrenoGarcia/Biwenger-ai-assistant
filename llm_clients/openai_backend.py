@@ -15,7 +15,7 @@ class Message(TypedDict):
     name: Optional[str]  # for tool role messages
     tool_call_id: Optional[str]
 
-# ---------- Config helpers ----------
+# ---------- Config & helpers ----------
 def _load_openai_config() -> dict:
     """
     Loads OpenAI credentials from ./secrets/openAI.toml (local) or env vars (cloud).
@@ -42,6 +42,14 @@ def _load_openai_config() -> dict:
 
     return {"api_key": api_key, "model": model}
 
+def _tools_specs_to_text(specs) -> str:
+    lines = []
+    for s in specs:
+        fn = s.get("function", {})
+        name = fn.get("name", "")
+        desc = (fn.get("description") or "").strip()
+        lines.append(f"{name}:\n{desc}")
+    return "\n\n".join(lines)
 
 # ---------- Backend ----------
 class OpenAIChatBackend:
@@ -142,3 +150,94 @@ class OpenAIChatBackend:
         )
 
         return resp
+
+    # -------------------------
+    # REGULAR CHAT
+    # -------------------------
+    def chat(
+            self,
+            messages,
+            *,
+            tools=None,
+            tool_choice=None,
+            response_format=None,
+            stream: bool = False,
+    ):
+        """
+        Minimal one-shot chat. Returns text if non-stream; returns the stream iterator if stream=True.
+        Use for small helper turns (e.g., summarizing a plan).
+        """
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+        }
+        if tools is not None:
+            kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        if stream:
+            kwargs["stream"] = True
+            return self.client.chat.completions.create(**kwargs)
+
+        resp = self.client.chat.completions.create(**kwargs)
+        msg = resp.choices[0].message
+        return msg.content or ""
+
+    # -------------------------
+    # ROUTER
+    # -------------------------
+    def route_mode(self, user_text: str, specs) -> dict:
+        """
+        LLM router: returns {"mode": "tool_qa"|"plan", "why": "..."} as strict JSON.
+        """
+        specs_text = _tools_specs_to_text(specs)
+
+        ROUTER_ROLE = """
+        You must choose exactly one mode for handling the user's message.
+
+        Modes:
+        - "tool_qa": The user is asking ABOUT the tools or table/schema/columns/fields, and can be answered from tool descriptions alone.
+        - "plan": The user asks to ANALYZE data, filter/sort/aggregate/plot, or otherwise requires using tools on data (planning phase).
+
+        Rules:
+        - Output STRICT JSON with keys: mode, why.
+        - mode ∈ {"tool_qa","plan"}.
+        - Keep "why" ≤ 120 characters.
+        - Do not add any other keys. No prose outside JSON. No code.
+        """
+
+        ROUTER_JSON_SCHEMA = {
+            "name": "route_mode",
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "mode": {"type": "string", "enum": ["tool_qa", "plan"]},
+                    "why": {"type": "string", "maxLength": 120}
+                },
+                "required": ["mode", "why"]
+            }
+        }
+
+        messages = [
+            {"role": "system", "content": ROUTER_ROLE},
+            {"role": "system", "content": f"TOOL_SPECS:\n{specs_text}"},
+            {"role": "user", "content": user_text},
+        ]
+        out = self.chat(
+            messages,
+            response_format={"type": "json_schema", "json_schema": ROUTER_JSON_SCHEMA},
+        )
+        return json.loads(out)
+
+    def answer_from_specs(self, system_prompt: str, specs, user_text: str) -> str:
+        ctx = _tools_specs_to_text(specs)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": f"TOOL_SPECS:\n{ctx}"},
+            {"role": "user", "content": user_text},
+        ]
+        return self.chat(messages)
+
