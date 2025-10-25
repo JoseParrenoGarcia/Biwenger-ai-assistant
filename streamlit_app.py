@@ -1,7 +1,10 @@
 import json
 import streamlit as st
 from llm_clients.openai_backend import OpenAIChatBackend
-from llm_clients.roles_and_prompts import PLANNER_ROLE, PLAN_SUMMARIZER_ROLE, PLAN_SUMMARIZER_ROLE, TOOL_KNOWLEDGE_ROLE
+from llm_clients.roles_and_prompts import (
+    PLANNER_ROLE,
+    PLAN_SUMMARIZER_ROLE,
+    TOOL_KNOWLEDGE_ROLE)
 
 from tools.registry import get_tools
 from tools.specs import MAKE_PLAN_SPEC
@@ -22,9 +25,7 @@ def summarize_plan_with_llm(backend, plan: dict) -> str:
         {"role": "system", "content": PLAN_SUMMARIZER_ROLE},
         {"role": "user", "content": "PLAN:\n" + json.dumps(plan, ensure_ascii=False, indent=2)}
     ]
-    # Use a tiny model, temp=0, and non-stream for determinism
     return backend.chat(messages)
-
 
 # ---------- Session state ----------
 if "messages" not in st.session_state:
@@ -41,16 +42,6 @@ if "approved_plan" not in st.session_state:
 
 if "exec_out" not in st.session_state:
     st.session_state.exec_out = {}
-
-# # ---------- Sidebar ----------
-# with st.sidebar:
-#     st.markdown("### Phase")
-#     st.caption("Currently: **Planning only** (no tool execution)")
-#     STREAMING = st.toggle("Stream responses", value=False)
-#     st.divider()
-#     if st.button("Clear session"):
-#         st.session_state.clear()
-#         st.rerun()
 
 # ---------- Chat history ----------
 col1, col2, col3 = st.columns([1, 1, 8])
