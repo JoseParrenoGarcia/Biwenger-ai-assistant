@@ -14,17 +14,19 @@ MAKE_PLAN_SPEC = {
         "name": "make_plan",
         "description": (
             "Plan the MINIMAL sequence of steps to satisfy the user's request using available tools.\n"
-            "Allowed step:\n"
-            "  - 'load_biwenger_player_stats' (load season snapshot as a DataFrame)\n"
+            "Allowed steps:\n"
+            "  • 'load_biwenger_player_stats' (load season snapshot as a DataFrame)\n"
+            "  • 'english_to_pandas' (translate the user's request into pandas code; df_in -> df_out)\n"
             "Guidance:\n"
-            "  • Prefer the shortest path (usually just load_biwenger_player_stats).\n"
-            "  • Do NOT invent filters, transformations, or plotting steps.\n"
-            "  • Use the provided schema context; only use listed columns.\n"
-            "  • If the request implies filtering or sorting, acknowledge it but do not include it as an executable step.\n"
+            "  • Pure preview/inspect requests → plan only 'load_biwenger_player_stats'.\n"
+            "  • Any transformation intent (filter/sort/rank/top-k/date range/group/aggregate/compute) → plan two steps in order:\n"
+            "      1) load_biwenger_player_stats\n"
+            "      2) english_to_pandas with args: {\"user_query\": \"<verbatim user text>\", \"table\": \"biwenger_player_stats\"}\n"
+            "  • Do NOT add plotting or execution steps.\n"
             "Return shape:\n"
             "  • PLAN object with keys: steps, why, assumptions.\n"
-            "  • Each step must have keys: tool, args.\n"
-            "  • Always include a concise 'why' (≤120 chars) and up to 3 short 'assumptions'."
+            "  • Each step has: tool, args.\n"
+            "  • Include a concise 'why' (≤120 chars) and up to 3 short 'assumptions'."
         ),
         "parameters": {
             "type": "object",
@@ -37,16 +39,31 @@ MAKE_PLAN_SPEC = {
                         "properties": {
                             "tool": {
                                 "type": "string",
-                                "enum": ["load_biwenger_player_stats"]
+                                "enum": ["load_biwenger_player_stats", "english_to_pandas"]
                             },
                             "args": {
                                 "type": "object",
                                 "description": (
                                     "Arguments for the step.\n"
-                                    "- For 'load_biwenger_player_stats', use an empty object {}."
+                                    "- For 'load_biwenger_player_stats': use {}.\n"
+                                    "- For 'english_to_pandas': provide {'user_query': str, 'table': 'biwenger_player_stats'}."
                                 ),
-                                "properties": {},
-                                "additionalProperties": False
+                                "oneOf": [
+                                    {
+                                        "type": "object",
+                                        "properties": {},
+                                        "additionalProperties": False
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "user_query": {"type": "string"},
+                                            "table": {"type": "string", "enum": ["biwenger_player_stats"]}
+                                        },
+                                        "required": ["user_query", "table"],
+                                        "additionalProperties": False
+                                    }
+                                ]
                             }
                         },
                         "required": ["tool", "args"],
@@ -71,6 +88,7 @@ MAKE_PLAN_SPEC = {
 }
 
 
+
 LOAD_BIWENGER_PLAYER_STATS_SPEC = {
     "type": "function",
     "function": {
@@ -88,4 +106,37 @@ LOAD_BIWENGER_PLAYER_STATS_SPEC = {
             "additionalProperties": False
         }
     }
+}
+
+ENGLISH_TO_PANDAS_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "english_to_pandas",
+        "description": (
+            "Translate a natural-language query into pandas code that transforms df_in into df_out "
+            "using the schema of the specified table. Returns only valid Python code, no prose."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_query": {
+                    "type": "string",
+                    "description": "The natural-language transformation or filter request."
+                },
+                "table": {
+                    "type": "string",
+                    "description": "Dataset/table name whose schema should be used for translation."
+                }
+            },
+            "required": ["user_query", "table"],
+            "additionalProperties": False,
+        },
+        "returns": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "The pandas snippet that reads df_in and writes df_out."}
+            },
+            "required": ["code"],
+        },
+    },
 }
