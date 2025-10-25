@@ -148,25 +148,33 @@ with right:
         with st.container(border=True):
             st.subheader("Execution Results")
             arts = exec_out.get("artifacts", {})
-            first = arts.get("step_0", {})
+            step0 = arts.get("step_0", {})
+            step1 = arts.get("step_1", {})
 
-            if "df_head" in first:
+            if "df_head" in step0:
                 st.markdown("**Data preview (top 50)**")
-                st.dataframe(first["df_head"], use_container_width=True)
+                st.dataframe(step0["df_head"], use_container_width=True)
 
             col1, col2 = st.columns([1, 1])
             with col1:
                 st.markdown("**Observations**")
                 st.json(exec_out.get("observations", []))
-
-
             with col2:
-                if "columns" in first:
+                if "columns" in step0:
                     st.markdown("**Columns**")
-                    st.write(first["columns"])
+                    st.write(step0["columns"])
 
+            # NEW: show generated pandas code from english_to_pandas
+        with st.container(border=True):
+            st.subheader("Generated pandas code (not executed)")
+            code = step1.get("code")  # in case you later add an adapter
+            if not code:
+                val = step1.get("value")
+                if isinstance(val, dict):
+                    code = val.get("code")
 
-
-            # if "value" in first and "df_head" not in first:
-            #     st.markdown("**Value**")
-            #     st.write(first["value"])
+            if code:
+                st.code(code, language="python")
+            else:
+                st.caption("No code found. Raw step_1 artifact:")
+                st.json(step1)

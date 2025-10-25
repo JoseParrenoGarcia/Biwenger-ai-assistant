@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List
 import json
 import re
 import textwrap
+from tools.schema_catalog import get_schema_dict
 
 def _strip_fences(s: str) -> str:
     s = s.strip()
@@ -156,32 +157,60 @@ class EnglishToPandas:
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_prompt},
         ]
-        raw = self.backend.chat(messages=messages, model=self.model)  # your OpenAIChatBackend supports this
+        print(f"[ETP] calling LLM… query_len={len(user_query)} cols={len(schema_spec.get('columns', []))}")
+        try:
+            raw = self.backend.chat(messages=messages)
+            # Log type + short preview
+            print(f"[ETP] LLM return type={type(raw).__name__}")
+            if isinstance(raw, str):
+                preview = raw[:160]
+            elif isinstance(raw, dict):
+                preview = str(list(raw.keys()))  # e.g., ['choices', 'usage', ...]
+            else:
+                preview = str(raw)[:160]
+            print(f"[ETP] LLM raw preview={preview}")
+        except Exception as e:
+            print(f"[ETP] LLM ERROR: {e}")
+            raise
 
-        code = _strip_fences((raw or "").strip())
+        # Normalize to a string content
+        content = None
+        if isinstance(raw, str):
+            content = raw
+        elif isinstance(raw, dict):
+            # Common OpenAI-like shape: {'choices':[{'message':{'content': '...'}}], ...}
+            try:
+                content = (
+                    raw.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+            except Exception as e:
+                print(f"[ETP] parse dict error: {e}")
+                content = ""
 
-        # Basic contract validation
+        if not content:
+            # Defensive log so we can see why it's empty
+            print("[ETP] Empty content from backend.chat; cannot generate code.")
+            raise RuntimeError("backend.chat returned empty content")
+
+        print(f"[ETP] content_len={len(content)}")
+        code = _strip_fences(content.strip())
+
+        # Contract validation
         errors = _has_required_contract(code)
         if errors:
-            # Return code anyway, but prepend a guardrail comment for visibility in UI (non-code consumers can strip it)
-            # NOTE: we promised "code only"; to stay strict, we fallback to raising for now.
+            print(f"[ETP] contract errors: {errors}")
             raise ValueError("Invalid pandas snippet: " + " ".join(errors))
 
         return code
 
 
-def english_to_pandas_tool(
-    user_query: str,
-    schema_spec: Dict[str, Any],
-    backend: Optional[Any] = None,
-    model: Optional[str] = None,
-) -> Dict[str, str]:
-    """
-    Registry-friendly entrypoint. Returns {"code": <snippet>}.
-    """
+def english_to_pandas_tool(user_query: str, table: str, backend=None, model=None) -> dict:
+    print(f"[TOOL] english_to_pandas_tool called table={table} backend_is_none={backend is None}")
+    schema_spec = get_schema_dict(table)
+    print(f"[TOOL] schema cols={len(schema_spec.get('columns', []))}")
     etp = EnglishToPandas(backend=backend, model=model)
-    code = etp.generate_code(
-        user_query=user_query,
-        schema_spec=schema_spec,
-    )
+    code = etp.generate_code(user_query=user_query, schema_spec=schema_spec)
+    print(f"[TOOL] english_to_pandas_tool code_len={len(code) if code else 0}")
     return {"code": code}
