@@ -4,13 +4,19 @@ This is what the backend uses to actually execute a tool call.
 """
 
 from tools.supabase_tools import load_biwenger_player_stats
-from tools.specs import LOAD_BIWENGER_PLAYER_STATS_SPEC, MAKE_PLAN_SPEC
+from tools.english_to_pandas import english_to_pandas_tool
+
+from tools.specs import (
+    LOAD_BIWENGER_PLAYER_STATS_SPEC,
+    ENGLISH_TO_PANDAS_SPEC,
+    MAKE_PLAN_SPEC)
 
 # ---------------------------------------------------------------------
 # 1️⃣ EXECUTION REGISTRY (actual Python callables)
 # ---------------------------------------------------------------------
 TOOL_REGISTRY = {
     "load_biwenger_player_stats": load_biwenger_player_stats,
+    "english_to_pandas": english_to_pandas_tool,
 }
 
 # ---------------------------------------------------------------------
@@ -24,6 +30,7 @@ PLANNER_TOOLS = [
 # Executor phase — the real callable tools
 TOOLS_SPECS = [
     LOAD_BIWENGER_PLAYER_STATS_SPEC,
+    ENGLISH_TO_PANDAS_SPEC
 ]
 
 # Optional helper to pick based on phase

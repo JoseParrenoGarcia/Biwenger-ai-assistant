@@ -1,10 +1,13 @@
 import json
 import streamlit as st
 from llm_clients.openai_backend import OpenAIChatBackend
-from llm_clients.roles_and_prompts import PLANNER_ROLE, PLAN_SUMMARIZER_ROLE, PLAN_SUMMARIZER_ROLE, TOOL_KNOWLEDGE_ROLE
+from llm_clients.roles_and_prompts import (
+    PLANNER_ROLE,
+    PLAN_SUMMARIZER_ROLE,
+    TOOL_KNOWLEDGE_ROLE)
 
 from tools.registry import get_tools
-from tools.specs import MAKE_PLAN_SPEC
+from tools.execute_pandas import execute_pandas_local
 
 st.set_page_config(page_title="AI Senior Data Analyst", page_icon="💬", layout="wide")
 
@@ -22,9 +25,7 @@ def summarize_plan_with_llm(backend, plan: dict) -> str:
         {"role": "system", "content": PLAN_SUMMARIZER_ROLE},
         {"role": "user", "content": "PLAN:\n" + json.dumps(plan, ensure_ascii=False, indent=2)}
     ]
-    # Use a tiny model, temp=0, and non-stream for determinism
     return backend.chat(messages)
-
 
 # ---------- Session state ----------
 if "messages" not in st.session_state:
@@ -41,16 +42,6 @@ if "approved_plan" not in st.session_state:
 
 if "exec_out" not in st.session_state:
     st.session_state.exec_out = {}
-
-# # ---------- Sidebar ----------
-# with st.sidebar:
-#     st.markdown("### Phase")
-#     st.caption("Currently: **Planning only** (no tool execution)")
-#     STREAMING = st.toggle("Stream responses", value=False)
-#     st.divider()
-#     if st.button("Clear session"):
-#         st.session_state.clear()
-#         st.rerun()
 
 # ---------- Chat history ----------
 col1, col2, col3 = st.columns([1, 1, 8])
@@ -154,28 +145,30 @@ with right:
     # ---------- Execution ----------
     exec_out = st.session_state.get("exec_out")
     if exec_out:
+        arts = exec_out.get("artifacts", {})
+        step0 = arts.get("step_0", {})
+        step1 = arts.get("step_1", {})
+
+        # existing panels for preview + code ...
         with st.container(border=True):
-            st.subheader("Execution Results")
-            arts = exec_out.get("artifacts", {})
-            first = arts.get("step_0", {})
+            st.subheader("Generated pandas code")
+            code = step1.get("code") or ((step1.get("value") or {}).get("code") if isinstance(step1.get("value"), dict) else None)
+            if code:
+                st.code(code, language="python")
+            else:
+                st.caption("No code artifact found for step_1.")
+                st.json(step1)
 
-            if "df_head" in first:
-                st.markdown("**Data preview (top 50)**")
-                st.dataframe(first["df_head"], use_container_width=True)
-
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                st.markdown("**Observations**")
-                st.json(exec_out.get("observations", []))
-
-
-            with col2:
-                if "columns" in first:
-                    st.markdown("**Columns**")
-                    st.write(first["columns"])
-
-
-
-            # if "value" in first and "df_head" not in first:
-            #     st.markdown("**Value**")
-            #     st.write(first["value"])
+        # ---- Local deterministic execution (no LLM, no planner step) ----
+        df_in = step0.get("df")
+        if df_in is not None and code:
+            if st.button("Run pandas code safely ▶️", use_container_width=True):
+                try:
+                    with st.spinner("Executing pandas locally…"):
+                        df_out = execute_pandas_local(code, df_in)
+                        st.success(f"Done. Rows: {len(df_out)} · Cols: {len(df_out.columns)}")
+                        st.dataframe(df_out.head(50), use_container_width=True)
+                except Exception as e:
+                    st.error(f"Pandas execution error: {e}")
+        else:
+            st.caption("Load data and generate code first to enable execution.")
