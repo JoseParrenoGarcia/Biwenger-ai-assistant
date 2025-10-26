@@ -7,7 +7,7 @@ from llm_clients.roles_and_prompts import (
     TOOL_KNOWLEDGE_ROLE)
 
 from tools.registry import get_tools
-from tools.specs import MAKE_PLAN_SPEC
+from tools.execute_pandas import execute_pandas_local
 
 st.set_page_config(page_title="AI Senior Data Analyst", page_icon="💬", layout="wide")
 
@@ -145,36 +145,30 @@ with right:
     # ---------- Execution ----------
     exec_out = st.session_state.get("exec_out")
     if exec_out:
+        arts = exec_out.get("artifacts", {})
+        step0 = arts.get("step_0", {})
+        step1 = arts.get("step_1", {})
+
+        # existing panels for preview + code ...
         with st.container(border=True):
-            st.subheader("Execution Results")
-            arts = exec_out.get("artifacts", {})
-            step0 = arts.get("step_0", {})
-            step1 = arts.get("step_1", {})
-
-            if "df_head" in step0:
-                st.markdown("**Data preview (top 50)**")
-                st.dataframe(step0["df_head"], use_container_width=True)
-
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                st.markdown("**Observations**")
-                st.json(exec_out.get("observations", []))
-            with col2:
-                if "columns" in step0:
-                    st.markdown("**Columns**")
-                    st.write(step0["columns"])
-
-            # NEW: show generated pandas code from english_to_pandas
-        with st.container(border=True):
-            st.subheader("Generated pandas code (not executed)")
-            code = step1.get("code")  # in case you later add an adapter
-            if not code:
-                val = step1.get("value")
-                if isinstance(val, dict):
-                    code = val.get("code")
-
+            st.subheader("Step 1 — Generated pandas code")
+            code = step1.get("code") or ((step1.get("value") or {}).get("code") if isinstance(step1.get("value"), dict) else None)
             if code:
                 st.code(code, language="python")
             else:
-                st.caption("No code found. Raw step_1 artifact:")
+                st.caption("No code artifact found for step_1.")
                 st.json(step1)
+
+        # ---- Local deterministic execution (no LLM, no planner step) ----
+        df_in = step0.get("df")
+        if df_in is not None and code:
+            if st.button("Run pandas code safely ▶️", use_container_width=True):
+                try:
+                    with st.spinner("Executing pandas locally…"):
+                        df_out = execute_pandas_local(code, df_in)
+                        st.success(f"Done. Rows: {len(df_out)} · Cols: {len(df_out.columns)}")
+                        st.dataframe(df_out.head(50), use_container_width=True)
+                except Exception as e:
+                    st.error(f"Pandas execution error: {e}")
+        else:
+            st.caption("Load data and generate code first to enable execution.")

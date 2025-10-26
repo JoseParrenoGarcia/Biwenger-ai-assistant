@@ -304,6 +304,7 @@ class OpenAIChatBackend:
             artifacts = {
                 "columns": list(out.columns),
                 "df_head": out.head(50),  # small sample for display
+                "df": out,
             }
             return obs, artifacts
 
