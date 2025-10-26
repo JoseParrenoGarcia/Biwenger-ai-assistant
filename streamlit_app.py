@@ -151,7 +151,7 @@ with right:
 
         # existing panels for preview + code ...
         with st.container(border=True):
-            st.subheader("Step 1 — Generated pandas code")
+            st.subheader("Generated pandas code")
             code = step1.get("code") or ((step1.get("value") or {}).get("code") if isinstance(step1.get("value"), dict) else None)
             if code:
                 st.code(code, language="python")

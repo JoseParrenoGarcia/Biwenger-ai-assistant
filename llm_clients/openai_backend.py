@@ -269,13 +269,13 @@ class OpenAIChatBackend:
         observation: small JSON for the chat/trace
         artifacts: richer payload for the UI (tables, lists, values)
         """
-        # --- Debug breadcrumb ---
-        print(f"[HANDLE] tool={tool} out_type={type(out).__name__}")
+        # # --- Debug breadcrumb ---
+        # print(f"[HANDLE] tool={tool} out_type={type(out).__name__}")
 
         # --- Special case for english_to_pandas so UI sees 'code' directly ---
         if tool == "english_to_pandas" and isinstance(out, dict) and "code" in out:
             code = out.get("code") or ""
-            print(f"[HANDLE] english_to_pandas code_len={len(code)}")
+            # print(f"[HANDLE] english_to_pandas code_len={len(code)}")
             obs = {
                 "tool": tool,
                 "status": "ok",
@@ -342,8 +342,8 @@ class OpenAIChatBackend:
             tool = step.get("tool")
             args = step.get("args", {}) or {}
 
-            # 👇 DEBUG 1: see each step coming in
-            print(f"[EXEC] step={i} tool={tool} args={args}")
+            # # 👇 DEBUG 1: see each step coming in
+            # print(f"[EXEC] step={i} tool={tool} args={args}")
 
             if tool not in TOOL_REGISTRY:
                 observations.append({
@@ -358,22 +358,22 @@ class OpenAIChatBackend:
                 if "backend" in sig.parameters:
                     call_kwargs["backend"] = self
 
-                # 👇 DEBUG 2: show what kwargs we actually pass (backend/model injection)
-                print(f"[EXEC] step={i} call_kwargs_keys={list(call_kwargs.keys())}")
-                print(f"[EXEC] step={i} fn={getattr(fn, '__name__', str(fn))}")
+                # # 👇 DEBUG 2: show what kwargs we actually pass (backend/model injection)
+                # print(f"[EXEC] step={i} call_kwargs_keys={list(call_kwargs.keys())}")
+                # print(f"[EXEC] step={i} fn={getattr(fn, '__name__', str(fn))}")
                 out = fn(**call_kwargs)
 
-                # 👇 DEBUG 3: what did the tool return?
-                typ = type(out).__name__
-                preview = (str(out)[:200] + "…") if isinstance(out, (dict, list, str)) else repr(out)
-                print(f"[EXEC] step={i} raw_out_type={typ} preview={preview}")
+                # # 👇 DEBUG 3: what did the tool return?
+                # typ = type(out).__name__
+                # preview = (str(out)[:200] + "…") if isinstance(out, (dict, list, str)) else repr(out)
+                # print(f"[EXEC] step={i} raw_out_type={typ} preview={preview}")
 
                 obs, arts = self._handle_result(tool, out)
                 observations.append(obs)
                 artifacts_by_step[f"step_{i}"] = arts
 
-                # 👇 DEBUG 4: what did we store for the UI?
-                print(f"[EXEC] step={i} obs_type={obs.get('type')} arts_keys={list(arts.keys())}")
+                # # 👇 DEBUG 4: what did we store for the UI?
+                # print(f"[EXEC] step={i} obs_type={obs.get('type')} arts_keys={list(arts.keys())}")
 
 
             except Exception as e:
