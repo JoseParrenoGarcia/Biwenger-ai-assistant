@@ -1,6 +1,6 @@
 # app/llm/openai_backend.py
 from __future__ import annotations
-from typing import TypedDict, Optional, Dict, Any, Tuple
+from typing import TypedDict, Optional, Dict, Any, Tuple, List
 from openai import OpenAI
 import tomllib
 import json
@@ -74,6 +74,7 @@ class OpenAIChatBackend:
             self,
             user_text: str,
             context: Optional[str] = None,
+            history: Optional[List[Dict[str, str]]] = None,
             stream: bool = True,
     ) -> Dict[str, Any]:
         """
@@ -92,8 +93,24 @@ class OpenAIChatBackend:
             },
             {"role": "user", "content": user_text},
         ]
+
         if context:
             messages.append({"role": "system", "content": f"CONTEXT_SCHEMA:\n{context}"})
+
+        if history:
+            # keep it compact and plain text; model doesn’t need JSON here
+            joined = "\n".join(
+                f"{m.get('role', 'user')}: {m.get('content', '')}".strip()
+                for m in history
+                if m.get("content")
+            )
+            if joined:
+                messages.append({
+                    "role": "system",
+                    "content": "RECENT_CHAT:\n" + joined
+                })
+
+        messages.append({"role": "user", "content": user_text})
 
         resp = self.client.chat.completions.create(
             model=self.model,
@@ -106,10 +123,13 @@ class OpenAIChatBackend:
         # For streaming UIs, return the raw iterator; otherwise parse
         if stream:
             return resp  # Streamlit can iterate over tokens
+
         msg = resp.choices[0].message
+
         if msg.tool_calls:
             args = json.loads(msg.tool_calls[0].function.arguments)
             return args
+
         return json.loads(msg.content)
 
     # -------------------------
