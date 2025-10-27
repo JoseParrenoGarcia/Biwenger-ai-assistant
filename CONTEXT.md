@@ -1,13 +1,12 @@
 # Project: AI Senior Data Analyst
 
 ## Project
-This project will build a chatbot that can act as your personal Senior Data Analyst.
-This Sr Data Analyst will be able to:
+This project builds a chatbot that acts as your personal Senior Data Analyst. The agent can:
 - Clarify vague requests into specific data analysis tasks.
-- Access data sources from Supabase
-- Translate English requests into pandas queries or code, and execute it locally. Filtering, aggregations, sortings, etc.
-- Generate visualizations using plotly.
+- Access and load data from Supabase.
+- Translate English requests into pandas code and execute it locally (filtering, aggregations, sorting, etc.).
 - Summarize findings in clear English.
+- (Planned) Generate visualizations using plotly.
 
 ## Goals
 To do this, we will have an LLM agent that can:
@@ -16,67 +15,49 @@ To do this, we will have an LLM agent that can:
 - Use tools to generate English summaries.
 - Have context of the current conversation history.
 
-From the UI persepctive, we will use Streamlit:
-- A chat interface to interact with the Sr Data Analyst.
-- Display data tables and visualizations (still to be define if inline in the chat or separate area).
-- Allow user to clear chat history.
+## Architecture
+- **Centralized OpenAI Client Directory**: All OpenAI client configuration and loading is handled in a central directory (`llm_clients`). Credentials are loaded from environment variables or a `secrets/openAI.toml` file.
+- **Tool Registry**: All callable tools are registered in a central registry (`tools/registry.py`). This ensures tool names and references are consistent and reduces manual errors.
+- **Planner and Executor**: The agent first plans a minimal sequence of tool calls (planner phase), then executes them deterministically (executor phase).
+- **Pandas Code Execution**: The agent can generate pandas code from natural language and execute it locally in a safe, validated environment (`tools/execute_pandas.py`). Security guardrails prevent unsafe operations.
+- **Streamlit Chatbot Interface**: The UI is built with Streamlit, providing:
+  - Chat history and user input handling.
+  - Streaming or non-streaming responses (user toggle).
+  - Display of plans, execution results, and generated pandas code.
+  - Safe local execution of generated pandas code with immediate feedback.
+  - Ability to clear chat/session state.
 
 ## Current Implementation
-- **Centralized OpenAI Client Directory**: A centralized directory (`llm_clients`) is used to load and configure the OpenAI client. This includes loading credentials from environment variables or a `secrets/openAI.toml` file.
-- **Streamlit Chatbot Interface**: A simple chatbot interface is implemented using Streamlit. It supports:
-  - Chat history rendering.
-  - User input handling.
-  - Streaming or non-streaming responses based on user preference.
+- Planning and execution phases are separated for clarity and safety.
+- All tool specifications and Python callables are managed centrally.
+- The chatbot can answer tool-related questions, propose action plans, and execute approved plans.
+- Generated pandas code can be reviewed and executed locally, with results shown in the UI.
+
+## Example Workflow
+1. User enters a request in the chat.
+2. The agent routes the request: answers directly or proposes a plan.
+3. The plan is displayed for approval.
+4. Upon approval, the agent executes the plan step-by-step.
+5. Generated pandas code is shown and can be executed locally.
+6. Results (dataframes, summaries) are displayed in the UI.
 
 ## Possible ideas to expore to implement
 
-#### Agent Additions
-`PlannerAgent`: produces structured plan JSON; consumes user prompt + schema summary.
-`ClarifierAgent`: generates disambiguation questions when planner marks uncertainty.
-`CodeGenAgent`: translates plan step → pandas/SQL; performs self-check against available columns.
-`RepairAgent`: takes traceback + original code → patched code (bounded diff).
-`VizAgent`: ranks chart specs; enforces data volume thresholds.
-`SummarizerAgent`: converts dataframe stats + plot context → narrative with caveats.
-`PolicyAgent`: validates plan vs guardrails (row limits, restricted columns).
-`ModelRouter`: rule-based selection (task tag → model id).
-
-#### Context Objects (Structured)
-`SessionState`: `messages[]`, `activePlan`, `dataframes{alias: {schema, rowCount, lineage}}`.
-`SchemaCache`: tables, columns, semantic tags, last_refreshed.
-`ToolManifest`: name, input schema, output schema, cost hint.
-`PlanStep`: id, type, status (`pending|running|failed|done`), artifacts, retries.
-`ObservationLog`: timing, token usage, errors.
-
-#### Minimal New Files
-`agents/planner.py`
-`agents/clarifier.py`
-`agents/code_gen.py`
-`agents/repair.py`
-`agents/viz.py`
-`agents/summarizer.py`
-`core/model_router.py`
-`core/memory.py`
-`core/plan_schema.py`
-`tools/manifest.py`
-`validation/policy.py`
+## Next Steps / Ideas
+- Add agents for clarification, code repair, visualization, summarization, and policy validation.
+- Expand context objects for richer session state and schema management.
+- Integrate plotly for inline visualizations.
+- Enhance error handling and user feedback.
+-
 
 #### Suggested Plan JSON (Example Skeleton
 ```json
 {
-  "version": "1.0",
-  "intent": "aggregate_sales_by_region",
-  "confidence": 0.82,
-  "clarificationsNeeded": ["Define time range"],
   "steps": [
-    {"id": "s1", "type": "fetch_schema", "targets": ["sales"], "expected_artifact": "sales_schema"},
-    {"id": "s2", "type": "profile_columns", "targets": ["sales.region", "sales.amount"]},
-    {"id": "s3", "type": "generate_query", "operation": "groupby_sum", "columns": ["region", "amount"]},
-    {"id": "s4", "type": "execute_query", "engine": "pandas"},
-    {"id": "s5", "type": "validate_result", "checks": ["row_count>0", "no_nulls:region"]},
-    {"id": "s6", "type": "suggest_viz", "chart_candidates": ["bar"]},
-    {"id": "s7", "type": "summarize", "style": "concise"}
+    {"tool": "load_biwenger_player_stats", "args": {}},
+    {"tool": "english_to_pandas", "args": {"user_query": "best goalkeeper by total points", "table": "biwenger_player_stats"}}
   ],
-  "risks": ["ambiguous time range", "high cardinality regions"],
-  "policy_flags": []
+  "why": "User wants to filter and rank goalkeepers by points.",
+  "assumptions": ["Goalkeeper position exists in the dataset."]
 }
 ```
