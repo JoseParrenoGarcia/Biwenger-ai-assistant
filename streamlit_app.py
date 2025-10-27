@@ -81,19 +81,24 @@ with left:
                         mode = decision["mode"]
 
                         if mode == "tool_qa":
-                            # Direct answer from specs (no planning)
-                            english = backend.answer_from_specs(
-                                system_prompt=TOOL_KNOWLEDGE_ROLE,
-                                specs=specs_for_router,
-                                user_text=prompt,
-                            )
-                            st.markdown(english)
-                            st.session_state.messages.append({"role": "assistant", "content": english})
+                            with st.spinner("Summarising answer…"):
+                                english = backend.answer_from_specs(
+                                    system_prompt=TOOL_KNOWLEDGE_ROLE,
+                                    specs=specs_for_router,
+                                    user_text=prompt,
+                                )
+                                st.markdown(english)
+                                st.session_state.messages.append({"role": "assistant", "content": english})
 
                         elif mode == "plan":
                             with st.spinner("Planning…"):
-                                plan_raw = backend.stream_planner(user_text=prompt, context=None, stream=False)
-                                st.session_state.plan = plan_raw  # right panel will render it
+                                history = [
+                                    m for m in st.session_state.messages
+                                    if m["role"] in ("user", "assistant")
+                                ][-6:]
+
+                                plan_raw = backend.stream_planner(user_text=prompt, context=None, history=history, stream=False)
+                                st.session_state.plan = plan_raw
 
                                 # Short English gloss of the plan
                                 english = summarize_plan_with_llm(backend, plan_raw)
